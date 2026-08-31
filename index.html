@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Netflix Database Architecture — DBMS Case Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ============ DESIGN TOKENS ============ */
+:root{
+  --bg:            #0f1016;
+  --bg-soft:       #141622;
+  --glass:         rgba(255,255,255,.055);
+  --glass-strong:  rgba(255,255,255,.09);
+  --glass-border:  rgba(255,255,255,.14);
+  --shadow:        0 8px 32px 0 rgba(0,0,0,0.37);
+  --accent:        #00d4ff;   /* neon cyan   */
+  --accent-2:      #4f8cff;   /* electric blue */
+  --netflix:       #e50914;
+  --coral:         #ff8a7a;
+  --text:          #f2f5fa;
+  --muted:         #a8b0c2;
+  --radius:        20px;
+  --font:          'Inter', 'Roboto', system-ui, -apple-system, sans-serif;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html{ scroll-behavior:smooth; scroll-snap-type:y proximity; }
+body{
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:rgba(0,212,255,.35); }
+
+/* ============ AMBIENT BACKGROUND ============ */
+.bg-orbs{ position:fixed; inset:0; z-index:-1; overflow:hidden;
+  background:
+    radial-gradient(1200px 700px at 85% -10%, rgba(79,140,255,.14), transparent 60%),
+    radial-gradient(900px 600px at -10% 40%, rgba(0,212,255,.10), transparent 60%),
+    radial-gradient(700px 500px at 70% 100%, rgba(229,9,20,.08), transparent 60%),
+    var(--bg);
+}
+.bg-orbs::after{ content:""; position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(ellipse at 50% 40%, black 20%, transparent 75%);
+}
+.orb{ position:absolute; border-radius:50%; filter:blur(90px); opacity:.5; animation:drift 22s ease-in-out infinite alternate; }
+.orb-1{ width:420px; height:420px; background:rgba(0,212,255,.22); top:-120px; right:-80px; }
+.orb-2{ width:360px; height:360px; background:rgba(79,140,255,.20); bottom:-100px; left:-100px; animation-delay:-8s; }
+.orb-3{ width:260px; height:260px; background:rgba(229,9,20,.16); top:45%; left:55%; animation-delay:-14s; }
+@keyframes drift{ from{ transform:translate(0,0) scale(1);} to{ transform:translate(-60px,50px) scale(1.15);} }
+
+/* ============ GLASSMORPHISM ============ */
+.glass{
+  background:linear-gradient(135deg, var(--glass-strong), var(--glass));
+  -webkit-backdrop-filter:blur(16px);
+  backdrop-filter:blur(16px);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  transition:transform .35s ease, border-color .35s ease, box-shadow .35s ease, background .35s ease;
+}
+.glass:hover{
+  transform:translateY(-5px);
+  border-color:rgba(0,212,255,.45);
+  box-shadow:0 8px 32px 0 rgba(0,0,0,0.37), 0 0 24px rgba(0,212,255,.18);
+}
+
+/* ============ CHROME: PROGRESS / TOPBAR / DOTS ============ */
+.progress{ position:fixed; top:0; left:0; right:0; height:3px; z-index:60; background:rgba(255,255,255,.06); }
+#progressBar{ display:block; height:100%; width:0;
+  background:linear-gradient(90deg, var(--netflix), var(--accent-2), var(--accent));
+  box-shadow:0 0 12px rgba(0,212,255,.7); transition:width .1s linear; }
+
+.top-bar{ position:fixed; top:14px; left:50%; transform:translateX(-50%);
+  width:min(1200px, calc(100% - 32px)); z-index:50;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 20px; border-radius:16px; }
+.brand{ display:flex; align-items:center; gap:12px; font-weight:700; letter-spacing:.06em; font-size:.85rem; }
+.brand .n-badge{ width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
+  background:linear-gradient(160deg,#ff1f2c,#8f050b); font-weight:900; font-size:1.05rem; color:#fff;
+  box-shadow:0 4px 14px rgba(229,9,20,.45); }
+.brand small{ color:var(--muted); font-weight:500; letter-spacing:.12em; }
+.counter{ font-variant-numeric:tabular-nums; color:var(--muted); font-size:.85rem; font-weight:600; letter-spacing:.15em; }
+.counter b{ color:var(--accent); }
+
+.dot-nav{ position:fixed; right:22px; top:50%; transform:translateY(-50%); z-index:50;
+  display:flex; flex-direction:column; gap:16px; }
+.dot-nav a{ position:relative; width:12px; height:12px; border-radius:50%;
+  background:rgba(255,255,255,.22); border:1px solid rgba(255,255,255,.25);
+  transition:all .3s ease; display:block; }
+.dot-nav a:hover{ background:rgba(0,212,255,.5); }
+.dot-nav a.active{ background:var(--accent); box-shadow:0 0 14px rgba(0,212,255,.8); transform:scale(1.25); }
+.dot-nav a::after{ content:attr(data-label); position:absolute; right:24px; top:50%; transform:translateY(-50%) translateX(6px);
+  background:rgba(15,16,22,.85); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  border:1px solid var(--glass-border); color:var(--text); font-size:.72rem; font-weight:600; letter-spacing:.08em;
+  padding:5px 12px; border-radius:8px; white-space:nowrap; opacity:0; pointer-events:none; transition:all .25s ease; }
+.dot-nav a:hover::after, .dot-nav a.active::after{ opacity:1; transform:translateY(-50%) translateX(0); }
+
+/* ============ SLIDES ============ */
+main{ position:relative; z-index:1; }
+.slide{ min-height:100vh; scroll-snap-align:start; scroll-margin-top:0;
+  padding:120px clamp(20px,6vw,72px) 72px;
+  display:flex; flex-direction:column; justify-content:center; }
+.wrap{ width:min(1160px,100%); margin-inline:auto; }
+
+.kicker{ display:inline-flex; align-items:center; gap:10px; font-size:.75rem; font-weight:700;
+  letter-spacing:.28em; text-transform:uppercase; color:var(--accent); margin-bottom:18px; }
+.kicker::before{ content:""; width:34px; height:2px; background:linear-gradient(90deg,var(--accent),transparent); }
+h1,h2{ font-weight:800; letter-spacing:-.02em; line-height:1.12; }
+h2{ font-size:clamp(1.7rem, 3.6vw, 2.6rem); margin-bottom:14px; }
+.lede{ color:var(--muted); max-width:760px; font-size:clamp(.95rem,1.4vw,1.06rem); }
+.grad{ background:linear-gradient(90deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+.grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-top:36px; }
+.grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:26px; margin-top:36px; }
+.tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:22px; margin-top:36px; }
+
+.card{ padding:30px 28px; position:relative; overflow:hidden; }
+.card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg, var(--accent), var(--accent-2)); opacity:0; transition:opacity .35s ease; }
+.card:hover::before{ opacity:1; }
+.card h3{ font-size:1.12rem; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:12px; }
+.card .sub{ color:var(--muted); font-size:.88rem; margin-bottom:16px; }
+.card ul{ list-style:none; display:grid; gap:12px; }
+.card li{ position:relative; padding-left:24px; color:var(--muted); font-size:.93rem; }
+.card li::before{ content:""; position:absolute; left:0; top:.55em; width:8px; height:8px; border-radius:2px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2)); box-shadow:0 0 8px rgba(0,212,255,.6); }
+.card li b{ color:var(--text); font-weight:600; }
+
+.icon-bubble{ width:42px; height:42px; flex:0 0 42px; border-radius:12px; display:grid; place-items:center;
+  background:rgba(0,212,255,.12); border:1px solid rgba(0,212,255,.35); color:var(--accent);
+  box-shadow:inset 0 0 14px rgba(0,212,255,.12); }
+.icon-bubble svg{ width:22px; height:22px; }
+.icon-bubble.red{ background:rgba(229,9,20,.12); border-color:rgba(229,9,20,.45); color:#ff5b64; box-shadow:inset 0 0 14px rgba(229,9,20,.15); }
+
+.chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+.chip{ font-size:.72rem; font-weight:700; letter-spacing:.06em; padding:6px 12px; border-radius:999px;
+  border:1px solid var(--glass-border); color:var(--text); background:rgba(255,255,255,.05); }
+.chip.cy{ border-color:rgba(0,212,255,.45); color:var(--accent); background:rgba(0,212,255,.08); }
+.chip.rd{ border-color:rgba(229,9,20,.5); color:#ff8a91; background:rgba(229,9,20,.1); }
+
+.stat-row{ display:flex; gap:14px; flex-wrap:wrap; margin-top:22px; }
+.stat{ padding:14px 20px; border-radius:14px; text-align:left; }
+.stat b{ display:block; font-size:1.25rem; font-weight:800; color:var(--accent); }
+.stat span{ font-size:.75rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+
+.quote{ margin-top:30px; padding:22px 26px; border-left:4px solid var(--netflix); border-radius:14px;
+  font-size:.95rem; color:var(--muted); font-style:italic; }
+.quote b{ color:var(--text); font-style:normal; }
+
+/* number badges for dilemma slide */
+.num{ font-size:1rem; font-weight:900; color:var(--accent); font-variant-numeric:tabular-nums; }
+
+/* ============ TITLE SLIDE ============ */
+.title-slide .wrap{ display:grid; grid-template-columns:1.15fr .85fr; gap:40px; align-items:center; }
+.hero-badge{ display:inline-flex; gap:10px; align-items:center; padding:8px 16px; border-radius:999px;
+  font-size:.72rem; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--accent);
+  border:1px solid rgba(0,212,255,.4); background:rgba(0,212,255,.07); margin-bottom:26px; }
+h1{ font-size:clamp(2.4rem, 6vw, 4.4rem); margin-bottom:20px; }
+.subtitle{ color:var(--muted); font-size:clamp(1rem, 1.7vw, 1.2rem); max-width:560px; }
+.presenter{ margin-top:34px; display:flex; align-items:center; gap:14px; color:var(--muted); font-size:.88rem; }
+.presenter .line{ width:44px; height:1px; background:linear-gradient(90deg,var(--netflix),transparent); }
+.hero-art{ display:grid; place-items:center; }
+.hero-art svg{ width:min(430px,100%); height:auto; filter:drop-shadow(0 0 26px rgba(0,212,255,.25)); }
+.gear{ transform-box:fill-box; transform-origin:center; animation:spin 16s linear infinite; }
+.gear.rev{ animation:spin-rev 16s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg);} }
+@keyframes spin-rev{ to{ transform:rotate(-360deg);} }
+
+.scroll-hint{ position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+  color:var(--muted); font-size:.72rem; letter-spacing:.3em; text-transform:uppercase; font-weight:600;
+  display:flex; flex-direction:column; align-items:center; gap:8px; animation:bob 2s ease-in-out infinite; }
+@keyframes bob{ 0%,100%{ transform:translate(-50%,0);} 50%{ transform:translate(-50%,8px);} }
+
+/* ============ SVG DIAGRAM STYLES ============ */
+.figure{ margin-top:34px; padding:26px 22px; }
+.figure svg{ width:100%; height:auto; display:block; }
+.svg-title{ fill:var(--text); font-weight:700; font-size:17px; font-family:var(--font); }
+.svg-cap{ fill:var(--muted); font-size:12.5px; font-family:var(--font); letter-spacing:.06em; }
+.svg-lbl{ fill:var(--muted); font-size:12px; font-family:var(--font); font-weight:600; }
+.svg-key{ fill:var(--accent); font-size:11px; font-family:var(--font); font-weight:700; }
+.flow{ stroke-dasharray:7 9; animation:dash 1.4s linear infinite; }
+@keyframes dash{ to{ stroke-dashoffset:-32; } }
+.pulse{ animation:pulse 2.6s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
+@keyframes pulse{ 0%,100%{ opacity:.55; transform:scale(1);} 50%{ opacity:1; transform:scale(1.12);} }
+
+/* ============ REVEAL ANIMATION ============ */
+.reveal{ opacity:0; transform:translateY(28px); transition:opacity .8s ease var(--d,0s), transform .8s ease var(--d,0s); }
+.reveal.in{ opacity:1; transform:none; }
+
+/* ============ FOOTER ============ */
+footer{ padding:44px clamp(20px,6vw,72px); border-top:1px solid var(--glass-border);
+  display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;
+  color:var(--muted); font-size:.82rem; }
+footer .q{ font-size:1.05rem; font-weight:800; color:var(--text); letter-spacing:.02em; }
+footer .q span{ color:var(--accent); }
+
+/* ============ RESPONSIVE ============ */
+@media (max-width:1020px){
+  .tiles{ grid-template-columns:1fr 1fr; }
+  .grid-3{ grid-template-columns:1fr; }
+  .title-slide .wrap{ grid-template-columns:1fr; }
+  .hero-art{ order:-1; } .hero-art svg{ width:min(300px,70%); }
+}
+@media (max-width:760px){
+  .grid-2{ grid-template-columns:1fr; }
+  .dot-nav{ right:auto; left:50%; top:auto; bottom:14px; transform:translateX(-50%); flex-direction:row; }
+  .dot-nav a::after{ display:none; }
+  .slide{ padding-top:100px; }
+  .top-bar small{ display:none; }
+}
+@media (max-width:560px){ .tiles{ grid-template-columns:1fr; } }
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{ animation:none !important; transition:none !important; }
+  html{ scroll-behavior:auto; }
+  .reveal{ opacity:1; transform:none; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-orbs" aria-hidden="true"><span class="orb orb-1"></span><span class="orb orb-2"></span><span class="orb orb-3"></span></div>
+<div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+
+<header class="top-bar glass">
+  <div class="brand"><span class="n-badge">N</span> NETFLIX&nbsp;·&nbsp;DB CASE STUDY <small>RELATIONAL × NoSQL</small></div>
+  <div class="counter"><b id="curSlide">01</b> / 06</div>
+</header>
+
+<nav class="dot-nav" aria-label="Slide navigation">
+  <a href="#s1" data-label="Title" class="active"></a>
+  <a href="#s2" data-label="Scale"></a>
+  <a href="#s3" data-label="SQL vs NoSQL"></a>
+  <a href="#s4" data-label="The Dilemma"></a>
+  <a href="#s5" data-label="ACID"></a>
+  <a href="#s6" data-label="Conclusion"></a>
+</nav>
+
+<main>
+<!-- ================= SLIDE 1 : TITLE ================= -->
+<section class="slide title-slide" id="s1" style="position:relative">
+  <div class="wrap">
+    <div>
+      <span class="hero-badge reveal">Case Study · DBMS Course Assignment</span>
+      <h1 class="reveal" style="--d:.08s">Netflix <span class="grad">Database</span><br>Architecture</h1>
+      <p class="subtitle reveal" style="--d:.16s">A Case Study on Relational vs. Non&#8209;Relational (NoSQL) Data Storage Strategies</p>
+      <p class="presenter reveal" style="--d:.24s"><span class="line"></span> Student Name &nbsp;·&nbsp; Database Management Systems</p>
+    </div>
+    <div class="hero-art reveal" style="--d:.2s" aria-hidden="true">
+      <svg viewBox="0 0 220 140" fill="none">
+        <g class="gear">
+          <circle cx="80" cy="70" r="40" stroke="#ff8a7a" stroke-width="15" stroke-dasharray="13 9"/>
+          <circle cx="80" cy="70" r="24" stroke="#ff8a7a" stroke-width="3"/>
+          <circle cx="80" cy="70" r="6" fill="#ff8a7a"/>
+        </g>
+        <g class="gear rev">
+          <circle cx="142" cy="70" r="40" stroke="#00d4ff" stroke-width="15" stroke-dasharray="13 9"/>
+          <circle cx="142" cy="70" r="24" stroke="#00d4ff" stroke-width="3"/>
+          <circle cx="142" cy="70" r="6" fill="#00d4ff"/>
+        </g>
+        <circle cx="111" cy="70" r="14" fill="#fff" opacity=".9" class="pulse"/>
+      </svg>
+    </div>
+  </div>
+  <div class="scroll-hint" aria-hidden="true">Scroll ▾</div>
+</section>
+
+<!-- ================= SLIDE 2 : INTRO & SCALE ================= -->
+<section class="slide" id="s2">
+  <div class="wrap">
+    <p class="kicker reveal">01 · Introduction</p>
+    <h2 class="reveal" style="--d:.06s">Introduction &amp; <span class="grad">System Scale</span></h2>
+    <p class="lede reveal" style="--d:.12s">A traditional single-database approach is impossible when playback, recommendations and user tracking must run in real time under massive concurrent load.</p>
+
+    <div class="grid-2">
+      <article class="card glass reveal" style="--d:.16s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/></svg></span> The Modern Scale</h3>
+        <p class="sub">Why one database can't run Netflix</p>
+        <ul>
+          <li><b>Hundreds of millions</b> of global active accounts served simultaneously.</li>
+          <li>Seamless video playback, <b>real-time recommendations</b>, continuous user tracking.</li>
+          <li>Massive concurrent <b>reads &amp; writes</b> — a monolithic DB becomes the bottleneck.</li>
+          <li>Result: a <b>hybrid storage model</b> — relational + non-relational, per workload.</li>
+        </ul>
+        <div class="stat-row">
+          <div class="stat glass"><b>100M+</b><span>Active Accounts</span></div>
+          <div class="stat glass"><b>24/7</b><span>Real-time Telemetry</span></div>
+          <div class="stat glass"><b>2</b><span>Database Paradigms</span></div>
+        </div>
+      </article>
+
+      <article class="card glass reveal" style="--d:.22s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg></span> Database Evolution Context</h3>
+        <p class="sub">From hierarchical roots to polyglot persistence</p>
+        <svg viewBox="0 0 560 240" role="img" aria-label="Database evolution timeline">
+          <line x1="40" y1="120" x2="520" y2="120" stroke="rgba(255,255,255,.2)" stroke-width="2"/>
+          <line x1="40" y1="120" x2="520" y2="120" stroke="url(#tl)" stroke-width="2" class="flow"/>
+          <defs><linearGradient id="tl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff8a7a"/><stop offset="1" stop-color="#00d4ff"/></linearGradient></defs>
+          <g class="pulse"><circle cx="70" cy="120" r="9" fill="#ff8a7a"/></g>
+          <circle cx="215" cy="120" r="9" fill="#4f8cff"/>
+          <circle cx="360" cy="120" r="9" fill="#4f8cff"/>
+          <g class="pulse"><circle cx="500" cy="120" r="11" fill="#00d4ff"/></g>
+          <text x="70" y="92" text-anchor="middle" class="svg-lbl">1960s–70s</text>
+          <text x="70" y="152" text-anchor="middle" class="svg-cap">IBM trees &amp; graphs</text>
+          <text x="70" y="170" text-anchor="middle" class="svg-cap">(early non-relational)</text>
+          <text x="215" y="152" text-anchor="middle" class="svg-lbl">1980s</text>
+          <text x="215" y="92" text-anchor="middle" class="svg-cap">Oracle — relational rise</text>
+          <text x="360" y="92" text-anchor="middle" class="svg-lbl">1998</text>
+          <text x="360" y="152" text-anchor="middle" class="svg-cap">PostgreSQL</text>
+          <text x="500" y="92" text-anchor="middle" class="svg-lbl">Today</text>
+          <text x="500" y="152" text-anchor="middle" class="svg-cap">Hybrid polyglot</text>
+          <text x="500" y="170" text-anchor="middle" class="svg-key">(Netflix)</text>
+        </svg>
+        <p class="sub" style="margin-top:14px">Modern systems must choose the <b style="color:var(--text)">right database model for each specific workload</b>.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 3 : SQL vs NoSQL ================= -->
+<section class="slide" id="s3">
+  <div class="wrap">
+    <p class="kicker reveal">02 · Storage Models</p>
+    <h2 class="reveal" style="--d:.06s">Relational vs. <span class="grad">Non-Relational (NoSQL)</span></h2>
+
+    <div class="grid-2">
+      <article class="card glass reveal" style="--d:.12s">
+        <h3><span class="icon-bubble red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span> Relational (RDBMS)</h3>
+        <p class="sub">Constrained, hard-coded schemas · strict ACID compliance</p>
+        <ul>
+          <li><b>Billing &amp; Subscriptions:</b> memberships, credit-card transactions, invoicing history, financial ledgers.</li>
+          <li><b>Account Management:</b> credential mappings; constraints prevent orphan records &amp; inconsistent profiles.</li>
+          <li>Reserved for data needing <b>absolute structural integrity</b>.</li>
+        </ul>
+        <div class="chips"><span class="chip rd">MySQL</span><span class="chip rd">PostgreSQL</span></div>
+      </article>
+
+      <article class="card glass reveal" style="--d:.18s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5l3.5 8M17 7.5l-3.5 8M7.5 6h9"/></svg></span> Non-Relational (NoSQL)</h3>
+        <p class="sub">Flexible, unconstrained schemas · real-time scale</p>
+        <ul>
+          <li><b>Viewing History &amp; Resume Playback:</b> second-by-second, write-heavy tracking at millions of concurrency.</li>
+          <li><b>Recommendation Engine:</b> dynamic metadata, preferences, real-time interaction logs — no fixed schema.</li>
+          <li>Optimized for <b>high-velocity reads/writes</b>.</li>
+        </ul>
+        <div class="chips"><span class="chip cy">Apache Cassandra</span><span class="chip cy">Amazon DynamoDB</span><span class="chip cy">EVCache / Redis</span></div>
+      </article>
+    </div>
+
+    <div class="figure glass reveal" style="--d:.24s">
+      <svg viewBox="0 0 980 400" role="img" aria-label="RDBMS tables versus NoSQL distributed key-value store diagram">
+        <!-- LEFT: relational tables -->
+        <text x="60" y="42" class="svg-title">Relational (SQL) — rigid tables</text>
+        <rect x="60" y="70" width="180" height="34" rx="6" fill="rgba(229,9,20,.25)" stroke="#ff5b64"/>
+        <text x="150" y="92" text-anchor="middle" class="svg-lbl" fill="#ffb3b8">Users</text>
+        <rect x="60" y="104" width="180" height="96" rx="4" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.25)"/>
+        <line x1="60" y1="136" x2="240" y2="136" stroke="rgba(255,255,255,.25)"/>
+        <line x1="60" y1="168" x2="240" y2="168" stroke="rgba(255,255,255,.25)"/>
+        <line x1="150" y1="104" x2="150" y2="200" stroke="rgba(255,255,255,.25)"/>
+        <text x="105" y="126" text-anchor="middle" class="svg-cap">User_ID</text>
+        <text x="195" y="126" text-anchor="middle" class="svg-cap">Name</text>
+
+        <rect x="270" y="180" width="180" height="34" rx="6" fill="rgba(229,9,20,.25)" stroke="#ff5b64"/>
+        <text x="360" y="202" text-anchor="middle" class="svg-lbl" fill="#ffb3b8">Billing</text>
+        <rect x="270" y="214" width="180" height="96" rx="4" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.25)"/>
+        <line x1="270" y1="246" x2="450" y2="246" stroke="rgba(255,255,255,.25)"/>
+        <line x1="270" y1="278" x2="450" y2="278" stroke="rgba(255,255,255,.25)"/>
+        <line x1="360" y1="214" x2="360" y2="310" stroke="rgba(255,255,255,.25)"/>
+        <text x="315" y="236" text-anchor="middle" class="svg-cap">Trans_ID</text>
+        <text x="405" y="236" text-anchor="middle" class="svg-cap">Amount</text>
+        <path d="M240 150 C 262 150 250 230 270 230" stroke="#00d4ff" stroke-width="2.5" fill="none" class="flow"/>
+        <text x="255" y="182" text-anchor="middle" class="svg-key">FK JOIN</text>
+        <text x="60" y="352" class="svg-cap">Fixed schema · joins · row locks · vertical scaling</text>
+
+        <!-- CENTER divider -->
+        <line x1="490" y1="60" x2="490" y2="330" stroke="rgba(255,255,255,.15)" stroke-dasharray="4 8"/>
+        <circle cx="490" cy="195" r="24" fill="#141622" stroke="rgba(0,212,255,.6)" stroke-width="1.5"/>
+        <text x="490" y="201" text-anchor="middle" class="svg-key" font-size="13">VS</text>
+
+        <!-- RIGHT: NoSQL mesh -->
+        <text x="540" y="42" class="svg-title">NoSQL — distributed key-value mesh</text>
+        <g stroke="rgba(0,212,255,.45)" stroke-width="1.5" class="flow" fill="none">
+          <path d="M620 130 L760 105 L885 160 L810 275 L660 255 L620 130"/>
+          <path d="M760 105 L810 275 M620 130 L885 160 M660 255 L885 160"/>
+        </g>
+        <g>
+          <circle cx="620" cy="130" r="34" fill="rgba(0,212,255,.12)" stroke="#00d4ff" stroke-width="1.5"/>
+          <circle cx="760" cy="105" r="34" fill="rgba(0,212,255,.12)" stroke="#00d4ff" stroke-width="1.5"/>
+          <circle cx="885" cy="160" r="34" fill="rgba(0,212,255,.12)" stroke="#00d4ff" stroke-width="1.5"/>
+          <circle cx="660" cy="255" r="34" fill="rgba(0,212,255,.12)" stroke="#00d4ff" stroke-width="1.5"/>
+          <circle cx="810" cy="275" r="34" fill="rgba(0,212,255,.12)" stroke="#00d4ff" stroke-width="1.5"/>
+        </g>
+        <text x="620" y="127" text-anchor="middle" class="svg-key">user:42</text><text x="620" y="141" text-anchor="middle" class="svg-cap">{…}</text>
+        <text x="760" y="102" text-anchor="middle" class="svg-key">user:07</text><text x="760" y="116" text-anchor="middle" class="svg-cap">{…}</text>
+        <text x="885" y="157" text-anchor="middle" class="svg-key">rec:99</text><text x="885" y="171" text-anchor="middle" class="svg-cap">{…}</text>
+        <text x="660" y="252" text-anchor="middle" class="svg-key">pos:15s</text><text x="660" y="266" text-anchor="middle" class="svg-cap">{…}</text>
+        <text x="810" y="272" text-anchor="middle" class="svg-key">user:88</text><text x="810" y="286" text-anchor="middle" class="svg-cap">{…}</text>
+        <text x="540" y="352" class="svg-cap">Flexible schema · no joins · scale-out · high-velocity writes</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 4 : THE DILEMMA ================= -->
+<section class="slide" id="s4">
+  <div class="wrap">
+    <p class="kicker reveal">03 · The Dilemma</p>
+    <h2 class="reveal" style="--d:.06s">Why Netflix Avoids <span class="grad">Pure Relational</span> for Streaming</h2>
+    <p class="lede reveal" style="--d:.12s">Storing all streaming telemetry, user logs and recommendation state in a monolithic RDBMS hits severe bottlenecks.</p>
+
+    <div class="grid-3">
+      <article class="card glass reveal" style="--d:.16s">
+        <h3><span class="num">01</span> Rigid Schema Constraints</h3>
+        <p class="sub">Schema evolution at petabyte scale</p>
+        <ul>
+          <li>Personalization metrics evolve constantly.</li>
+          <li>Altering relational tables across <b>petabytes</b> causes massive downtime.</li>
+          <li>NoSQL provides the <b>schema flexibility</b> required.</li>
+        </ul>
+      </article>
+      <article class="card glass reveal" style="--d:.22s">
+        <h3><span class="num">02</span> Write Bottlenecks</h3>
+        <p class="sub">Locking vs. peak-hour concurrency</p>
+        <ul>
+          <li>RDBMS enforces <b>strict locking</b> to keep tables consistent.</li>
+          <li>Peak evening: millions of concurrent <b>"Continue Watching"</b> timestamp writes.</li>
+          <li>A relational engine would <b>choke</b> under the load.</li>
+        </ul>
+      </article>
+      <article class="card glass reveal" style="--d:.28s">
+        <h3><span class="num">03</span> Horizontal Scalability</h3>
+        <p class="sub">Scale-out on distributed clusters</p>
+        <ul>
+          <li>NoSQL is purpose-built to <b>scale out horizontally</b>.</li>
+          <li>Matches Netflix's global cloud infrastructure.</li>
+          <li>Running primarily on <b>AWS</b>.</li>
+        </ul>
+      </article>
+    </div>
+
+    <blockquote class="quote glass reveal" style="--d:.34s">
+      <b>Professor's note:</b> "A large retail process processes numerous transactions per second against a single account. Why relational, not non-relational?" — For Netflix's streaming data layer, the <b>opposite holds true</b>.
+    </blockquote>
+  </div>
+</section>
+
+<!-- ================= SLIDE 5 : ACID ================= -->
+<section class="slide" id="s5">
+  <div class="wrap">
+    <p class="kicker reveal">04 · Transactional Core</p>
+    <h2 class="reveal" style="--d:.06s"><span class="grad">ACID</span> Properties in Core Systems</h2>
+    <p class="lede reveal" style="--d:.12s">NoSQL handles high-speed streaming metadata — but billing &amp; accounts still demand strict ACID guarantees.</p>
+
+    <div class="tiles">
+      <article class="card glass reveal" style="--d:.14s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></span>Atomicity</h3>
+        <p class="sub">The "all-or-nothing" rule</p>
+        <ul><li>A subscription update or monthly payment <b>fully succeeds or rolls back entirely</b>. Partial updates are unacceptable.</li></ul>
+      </article>
+      <article class="card glass reveal" style="--d:.2s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.2 1.2"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.2-1.2"/></svg></span>Consistency</h3>
+        <p class="sub">Valid state, everywhere</p>
+        <ul><li>Account status (active vs. canceled) is <b>instantly reflected</b> across billing and access-control layers.</li></ul>
+      </article>
+      <article class="card glass reveal" style="--d:.26s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>Isolation</h3>
+        <p class="sub">Concurrent, conflict-free</p>
+        <ul><li>Simultaneous multi-device updates — a password change while another profile streams — <b>never corrupt</b> transactional state.</li></ul>
+      </article>
+      <article class="card glass reveal" style="--d:.32s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Durability</h3>
+        <p class="sub">Committed means permanent</p>
+        <ul><li>Once a payment or account modification is committed, it <b>survives system crashes</b> and server failures.</li></ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SLIDE 6 : CONCLUSION ================= -->
+<section class="slide" id="s6">
+  <div class="wrap">
+    <p class="kicker reveal">05 · Conclusion</p>
+    <h2 class="reveal" style="--d:.06s">Conclusion &amp; <span class="grad">Key Takeaways</span></h2>
+
+    <div class="grid-2" style="align-items:stretch">
+      <article class="card glass reveal" style="--d:.12s">
+        <h3><span class="icon-bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span> The Power of Multiple Databases</h3>
+        <ul style="margin-top:14px">
+          <li>Modern enterprise architecture <b>rarely relies on "one-size-fits-all"</b> — it's a multi-database approach.</li>
+          <li><b>RDBMS</b> for strict, ACID-compliant financial &amp; account transactions.</li>
+          <li><b>NoSQL</b> for flexible, real-time streaming data at global scale.</li>
+          <li>Outcome: <b>optimal performance, high availability, global scale</b>.</li>
+        </ul>
+        <div class="chips" style="margin-top:22px"><span class="chip rd">SQL = Safety</span><span class="chip cy">NoSQL = Scale</span><span class="chip">Hybrid = Netflix</span></div>
+      </article>
+
+      <div class="figure glass reveal" style="--d:.2s; margin-top:0">
+        <svg viewBox="0 0 560 330" role="img" aria-label="Netflix hybrid architecture diagram">
+          <rect x="200" y="130" width="160" height="70" rx="14" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.4)"/>
+          <text x="280" y="160" text-anchor="middle" class="svg-title" font-size="15">Netflix</text>
+          <text x="280" y="180" text-anchor="middle" class="svg-cap">Services</text>
+
+          <rect x="30" y="30" width="150" height="60" rx="12" fill="rgba(229,9,20,.15)" stroke="#ff5b64"/>
+          <text x="105" y="56" text-anchor="middle" class="svg-lbl" fill="#ffb3b8">RDBMS</text>
+          <text x="105" y="74" text-anchor="middle" class="svg-cap">billing · accounts</text>
+
+          <g fill="rgba(0,212,255,.12)" stroke="#00d4ff">
+            <circle cx="420" cy="45" r="26"/><circle cx="490" cy="75" r="26"/><circle cx="430" cy="110" r="26"/>
+          </g>
+          <text x="420" y="49" text-anchor="middle" class="svg-key">C*</text>
+          <text x="490" y="79" text-anchor="middle" class="svg-key">DDB</text>
+          <text x="430" y="114" text-anchor="middle" class="svg-key">Redis</text>
+          <text x="455" y="160" text-anchor="middle" class="svg-cap">history · recs</text>
+
+          <path d="M140 90 C 180 120 200 130 230 140" stroke="#ff5b64" stroke-width="2" fill="none" class="flow"/>
+          <path d="M420 135 C 400 150 380 150 360 155" stroke="#00d4ff" stroke-width="2" fill="none" class="flow"/>
+          <text x="150" y="120" class="svg-key" fill="#ff8a91">ACID txns</text>
+          <text x="380" y="128" class="svg-key">streams</text>
+
+          <text x="280" y="250" text-anchor="middle" class="svg-cap">Right tool for the right job —</text>
+          <text x="280" y="272" text-anchor="middle" class="svg-title" font-size="15">Hybrid architecture balances safety and scale</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="q">Questions &amp; <span>Discussion</span> ▸</div>
+  <div>Case Study: Database Architecture &amp; Data Storage Strategy at Netflix · Student Name · DBMS Course Assignment</div>
+</footer>
+
+<script>
+'use strict';
+const sections = [...document.querySelectorAll('.slide')];
+const dots     = [...document.querySelectorAll('.dot-nav a')];
+const bar      = document.getElementById('progressBar');
+const cur      = document.getElementById('curSlide');
+
+/* --- Scroll progress --- */
+const onScroll = () => {
+  const h = document.documentElement.scrollHeight - innerHeight;
+  bar.style.width = (h > 0 ? (scrollY / h) * 100 : 0) + '%';
+};
+addEventListener('scroll', onScroll, { passive:true }); onScroll();
+
+/* --- Active slide detection --- */
+const activeIO = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const i = sections.indexOf(e.target);
+      dots.forEach((d, j) => d.classList.toggle('active', i === j));
+      cur.textContent = String(i + 1).padStart(2, '0');
+    }
+  });
+}, { rootMargin:'-45% 0px -45% 0px', threshold:0 });
+sections.forEach(s => activeIO.observe(s));
+
+/* --- Reveal-on-scroll --- */
+const revealIO = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); } });
+}, { threshold:.15 });
+document.querySelectorAll('.reveal').forEach(el => revealIO.observe(el));
+
+/* --- Keyboard slide navigation --- */
+const current = () => sections.findIndex(s => {
+  const r = s.getBoundingClientRect();
+  return r.top <= innerHeight / 2 && r.bottom >= innerHeight / 2;
+});
+const go = i => sections[Math.max(0, Math.min(sections.length - 1, i))].scrollIntoView({ behavior:'smooth' });
+addEventListener('keydown', e => {
+  const c = current();
+  if (['ArrowDown','PageDown','ArrowRight'].includes(e.key)) { e.preventDefault(); go(c + 1); }
+  if (['ArrowUp','PageUp','ArrowLeft'].includes(e.key))     { e.preventDefault(); go(c - 1); }
+  if (e.key === 'Home') { e.preventDefault(); go(0); }
+  if (e.key === 'End')  { e.preventDefault(); go(sections.length - 1); }
+});
+</script>
+</body>
+</html>
