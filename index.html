@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RDBMS Portal</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Crect width='64' height='64' rx='16' fill='%2314161f' stroke='rgba(255,255,255,0.06)' stroke-width='1.5'/%3E%3Cellipse cx='32' cy='22' rx='14' ry='6' fill='%23ffffff' opacity='0.85'/%3E%3Cpath d='M18 22v10c0 3.3 6.3 6 14 6s14-2.7 14-6V22' stroke='%23ffffff' stroke-width='1.75' stroke-opacity='0.85' fill='none'/%3E%3Cpath d='M18 34v10c0 3.3 6.3 6 14 6s14-2.7 14-6V34' stroke='%23ffffff' stroke-width='1.75' stroke-opacity='0.5' fill='none'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ================= NEU-GLASS HYBRID DESIGN SYSTEM ================= */
+:root {
+  /* Dark Mode (Default) */
+  --bg-overlay: rgba(12, 14, 18, 0.72);
+  --panel-bg: rgba(25, 27, 34, 0.78);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-shadow: 
+    0 30px 60px -15px rgba(0, 0, 0, 0.8),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  
+  --text-main: #f0f3f8;
+  --text-muted: #8e96a8;
+  
+  --neu-btn-shadow: 
+    6px 6px 16px rgba(0, 0, 0, 0.45), 
+    -6px -6px 16px rgba(255, 255, 255, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  
+  --neu-btn-pressed: 
+    inset 4px 4px 8px rgba(0, 0, 0, 0.6), 
+    inset -4px -4px 8px rgba(255, 255, 255, 0.05);
+  
+  --neu-groove: 
+    inset 4px 4px 10px rgba(0, 0, 0, 0.6), 
+    inset -4px -4px 10px rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] {
+  /* Light Mode */
+  --bg-overlay: rgba(240, 235, 228, 0.55);
+  --panel-bg: rgba(235, 238, 244, 0.82);
+  --panel-border: rgba(255, 255, 255, 0.85);
+  --panel-shadow: 
+    0 30px 60px -15px rgba(70, 60, 50, 0.25),
+    inset 0 1px 2px #ffffff;
+  
+  --text-main: #1f2530;
+  --text-muted: #677284;
+  
+  --neu-btn-shadow: 
+    6px 6px 14px rgba(160, 170, 185, 0.55), 
+    -6px -6px 14px #ffffff,
+    inset 0 1px 2px #ffffff;
+  
+  --neu-btn-pressed: 
+    inset 4px 4px 8px rgba(160, 170, 185, 0.6), 
+    inset -4px -4px 8px #ffffff;
+  
+  --neu-groove: 
+    inset 5px 5px 10px rgba(160, 170, 185, 0.5), 
+    inset -5px -5px 10px #ffffff;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+  position: relative;
+  overflow: hidden;
+  transition: color 0.4s ease;
+}
+
+/* ================= BACKGROUND VIDEO & OVERLAY ================= */
+.video-background-wrapper {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;
+  overflow: hidden;
+  background: #0f1015;
+}
+
+.video-background-wrapper video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+/* Adaptive ambient tint overlay */
+.video-overlay-tint {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.4s ease;
+}
+
+/* ================= MASTER CARD ================= */
+.rdbms-frame {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 94vw);
+  min-height: 640px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  border-radius: 40px;
+  box-shadow: var(--panel-shadow);
+  border: 1.5px solid var(--panel-border);
+  padding: 44px 34px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  transition: all 0.4s ease;
+}
+
+/* 1. Header Title */
+.rdbms-title {
+  font-family: 'Cinzel', serif;
+  font-size: 2.35rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--text-main);
+  text-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  margin-top: 4px;
+}
+
+/* 2. Light / Dark Switch Segment (Recessed Groove) */
+.theme-switch-row {
+  display: flex;
+  background: var(--panel-bg);
+  border-radius: 9999px;
+  padding: 6px;
+  box-shadow: var(--neu-groove);
+  gap: 6px;
+  backdrop-filter: blur(12px);
+}
+
+.theme-switch-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  font-family: 'Cinzel', serif;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+}
+
+/* Active Elevated Pill inside the groove */
+.theme-switch-btn.active {
+  background: var(--panel-bg);
+  color: var(--text-main);
+  box-shadow: var(--neu-btn-shadow);
+}
+
+/* 3. Feedback Capsule Button (Soft Extrusion) */
+.feedback-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 9999px;
+  color: var(--text-main);
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--neu-btn-shadow);
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.feedback-btn:hover {
+  transform: translateY(-1px);
+}
+
+.feedback-btn:active {
+  box-shadow: var(--neu-btn-pressed);
+  transform: translateY(1px);
+}
+
+.feedback-btn svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 4. Case Studies Directory List */
+.case-study-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.case-study-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  color: var(--text-main);
+  text-decoration: none;
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  box-shadow: var(--neu-btn-shadow);
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.case-study-link:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+.case-study-link:active {
+  box-shadow: var(--neu-btn-pressed);
+  transform: translateY(1px);
+}
+
+.case-study-link .arrow-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.2s ease;
+}
+
+.case-study-link:hover .arrow-icon {
+  transform: translateX(4px);
+}
+
+/* Modal Popup for Feedback */
+.feedback-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.feedback-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.feedback-modal-box {
+  width: min(400px, 92vw);
+  background: var(--panel-bg);
+  backdrop-filter: blur(28px);
+  border-radius: 32px;
+  padding: 32px 28px;
+  box-shadow: var(--panel-shadow);
+  border: 1.5px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.feedback-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.feedback-modal-head h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+}
+
+.modal-close-btn {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--neu-btn-shadow);
+  transition: all 0.2s ease;
+}
+
+.modal-close-btn:active {
+  box-shadow: var(--neu-btn-pressed);
+}
+
+.feedback-modal textarea {
+  width: 100%;
+  height: 110px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 14px;
+  color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.9rem;
+  resize: none;
+  outline: none;
+  box-shadow: var(--neu-groove);
+}
+
+.feedback-submit-btn {
+  padding: 14px;
+  border-radius: 9999px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-main);
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: var(--neu-btn-shadow);
+  transition: all 0.2s ease;
+}
+
+.feedback-submit-btn:active {
+  box-shadow: var(--neu-btn-pressed);
+}
+</style>
+</head>
+<body>
+
+<!-- Background Video Player -->
+<div class="video-background-wrapper" aria-hidden="true">
+  <video autoplay loop muted playsinline id="bgVideo">
+    <source src="video.mp4" type="video/mp4">
+  </video>
+</div>
+
+<!-- Ambient Tint Overlay -->
+<div class="video-overlay-tint" aria-hidden="true"></div>
+
+<!-- Master Neumorphic Card Container -->
+<main class="rdbms-frame">
+
+  <!-- 1. Header Title -->
+  <h1 class="rdbms-title">RDBMS</h1>
+
+  <!-- 2. Light / Dark Switch -->
+  <div class="theme-switch-row" role="radiogroup" aria-label="Theme selection">
+    <button type="button" class="theme-switch-btn" id="lightBtn" onclick="setTheme('light')">
+      LIGHT
+    </button>
+    <button type="button" class="theme-switch-btn active" id="darkBtn" onclick="setTheme('dark')">
+      DARK
+    </button>
+  </div>
+
+  <!-- 3. Feedback Capsule Button -->
+  <button type="button" class="feedback-btn" onclick="openFeedbackModal()" title="Leave Feedback">
+    <svg viewBox="0 0 24 24">
+      <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+      <path d="M2 2l7.586 7.586"></path>
+      <circle cx="11" cy="11" r="2"></circle>
+    </svg>
+    <span>FEEDBACK</span>
+  </button>
+
+  <!-- 4. Case Studies Directory List -->
+  <div class="case-study-list">
+    <!-- 1. Netflix Case Study (Links to folder's webpage) -->
+    <a href="Arrow_game/index.html" class="case-study-link" title="Open Netflix Case Study">
+      <span>1. NETFLIX-CASE STUDY</span>
+      <svg class="arrow-icon" viewBox="0 0 24 24">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+        <polyline points="12 5 19 12 12 19"></polyline>
+      </svg>
+    </a>
+  </div>
+
+</main>
+
+<!-- Feedback Modal -->
+<div class="feedback-modal" id="feedbackModal" aria-hidden="true">
+  <div class="feedback-modal-box">
+    <div class="feedback-modal-head">
+      <h3>FEEDBACK</h3>
+      <button type="button" class="modal-close-btn" onclick="closeFeedbackModal()">?</button>
+    </div>
+    <textarea placeholder="Share your feedback or thoughts on the case study..." id="feedbackInput"></textarea>
+    <button type="button" class="feedback-submit-btn" onclick="submitFeedback()">SEND FEEDBACK</button>
+  </div>
+</div>
+
+<script>
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const lightBtn = document.getElementById('lightBtn');
+  const darkBtn = document.getElementById('darkBtn');
+  
+  if (theme === 'light') {
+    lightBtn.classList.add('active');
+    darkBtn.classList.remove('active');
+  } else {
+    darkBtn.classList.add('active');
+    lightBtn.classList.remove('active');
+  }
+}
+
+function openFeedbackModal() {
+  const modal = document.getElementById('feedbackModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeFeedbackModal() {
+  const modal = document.getElementById('feedbackModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function submitFeedback() {
+  const input = document.getElementById('feedbackInput');
+  if (input.value.trim()) {
+    alert('Thank you for your feedback!');
+    input.value = '';
+    closeFeedbackModal();
+  } else {
+    alert('Please enter your feedback first.');
+  }
+}
+
+// Close on backdrop click
+document.getElementById('feedbackModal').addEventListener('click', (e) => {
+  if (e.target.id === 'feedbackModal') closeFeedbackModal();
+});
+</script>
+
+</body>
+</html>
